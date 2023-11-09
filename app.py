@@ -74,7 +74,7 @@ art_perday = px.bar(
     template=template,
     height=500,
     title="Articles per day NYTimes.com - October 2023",
-    labels={"pub_day": "day"},
+    labels={"pub_date": "date"},
 )
 art_perday.update_layout(bargap=0.03)
 
@@ -86,7 +86,7 @@ keywords_perday = (
 )
 keywords_perday_fig = adviz.racing_chart(
     keywords_perday[["keywords_flat", "pub_date", "date"]].rename(
-        columns={"pub_day": "Day"}
+        columns={"pub_date": "count"}
     ),
     n=15,
     theme=template,
@@ -188,8 +188,8 @@ def make_kw_chart(kwds):
         template=template,
         labels={
             "keywords_flat": "Keyword",
-            "pub_day": "day",
-            "date": "number of articles",
+            "pub_date": "count",
+            # "date": "number of articles",
         },
     )
     fig.layout.hovermode = "x unified"
