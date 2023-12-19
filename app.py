@@ -24,40 +24,69 @@ load_figure_template(
         "vapor",
         "solar",
         "slate",
+        "bootstrap"
     ]
 )
-template = "slate"
+template = "cosmo"
 pd.options.display.max_columns = None
 
-
-october = pd.concat([
-    pd.read_csv("/Users/me/Google Drive/nytimes_api_analysis/nyt_october_2023.csv"),
-    pd.read_csv("/Users/me/Google Drive/nytimes_api_analysis/nyt_november_2023.csv")
-], ignore_index=True)
+data = pd.read_csv('api_data.csv')
 
 keywords_flat = []
-for kw in october["keywords"]:
+for kw in data["keywords"]:
     keywords_flat.append([k["value"] for k in eval(kw)])
 
-october["keywords_flat"] = keywords_flat
-october["headline_flat"] = [eval(headline)["main"] for headline in october["headline"]]
-october["pub_date"] = pd.to_datetime(october["pub_date"])
-october["pub_day"] = october["pub_date"].dt.day
+data["keywords_flat"] = keywords_flat
+data["headline_flat"] = [eval(headline)["main"] for headline in data["headline"]]
+data["pub_date"] = pd.to_datetime(data["pub_date"])
+data["pub_day"] = data["pub_date"].dt.day
 
-pub_day_df = october["pub_date"].dt.date.value_counts().sort_index().reset_index()
+authors = []
+for byline in data['byline']:
+    try:
+        d = eval(byline)
+        persons = []
+        if d.get('person'):
+            for p in d['person']:
+                tempname = ' '.join([p['firstname'], p['middlename'] or '', p['lastname']])
+                persons.append(tempname.replace('  ', ' '))
+        authors.append(', '.join(persons))
+    except Exception as e:
+        authors.append(None)
+        continue
+data['authors'] = authors
 
+pub_day_df = data.groupby([data['pub_date'].dt.date, 'document_type'])['pub_day'].count().reset_index()
 
-top_kwds = october["keywords_flat"].explode().value_counts().head(300).index
+# pub_day_df = data["pub_date"].dt.date.value_counts().sort_index().reset_index()
 
-keywords = october[["pub_date", "pub_day", "keywords_flat"]].explode("keywords_flat")
+art_perday = px.bar(
+    pub_day_df,
+    x="pub_date",
+    y="pub_day",
+    color='document_type',
+    template=template,
+    height=650,
+    title=f"Articles per day NYTimes.com<br>{str(data['pub_date'].min())[:10]} - {str(data['pub_date'].max())[:10]}",
+    labels={"pub_day": "count", "pub_date": ''},
+)
+art_perday.update_layout(bargap=0.03)
+art_perday.layout.legend.title = 'Document type'
+art_perday.layout.legend.orientation = 'h'
+
+top_kwds = data["keywords_flat"].explode().value_counts().head(300).index
+
+keywords = data[["pub_date", "pub_day", "keywords_flat"]].explode("keywords_flat")
 keywords['date'] = keywords['pub_date'].dt.date
 
+
+
 dbc_css = "https://cdn.jsdelivr.net/gh/AnnMarieW/dash-bootstrap-templates/dbc.min.css"
-app = Dash(__name__, external_stylesheets=[dbc.themes.SLATE, dbc_css])
+app = Dash(__name__, external_stylesheets=[dbc.themes.COSMO, dbc_css])
 
 
 wordcount_hist = px.histogram(
-    october,
+    data,
     x="word_count",
     template=template,
     nbins=100,
@@ -65,18 +94,6 @@ wordcount_hist = px.histogram(
     title="Word count per article NYTimes.com - October 2023",
     labels={"word_count": "word count"},
 )
-
-
-art_perday = px.bar(
-    pub_day_df,
-    x="pub_date",
-    y="count",
-    template=template,
-    height=500,
-    title="Articles per day NYTimes.com - October 2023",
-    labels={"pub_date": "date"},
-)
-art_perday.update_layout(bargap=0.03)
 
 
 keywords_perday = (
@@ -90,18 +107,30 @@ keywords_perday_fig = adviz.racing_chart(
     ),
     n=15,
     theme=template,
+    # frame_duration=200,
     height=750,
     title="Top daily keywords - racing",
 )
 keywords_perday_fig.layout.margin.l = 200
 keywords_perday_fig.layout.yaxis.title = None
 
+top_keywords = data['keywords_flat'].explode().value_counts().head(20).reset_index()
+
+top_keywords_fig = px.bar(
+    top_keywords[::-1],
+    title=f"Total articles per keyword (top 20)<br>{str(data['pub_date'].min())[:10]} - {str(data['pub_date'].max())[:10]}",
+    labels={'keywords_flat': 'keyword'},
+    template=template,
+    height=650,
+    x='count',
+    y='keywords_flat')
+
 app.layout = html.Div(
     [
         html.Br(),
         html.H1(
             [
-                "NYTimes.com News Articles - October 2023",
+                f"NYTimes.com News Articles - {str(data['pub_date'].min())[:10]} - {str(data['pub_date'].max())[:10]}",
                 html.Div(
                     [
                         html.A(
@@ -130,7 +159,9 @@ app.layout = html.Div(
                 ),
                 dbc.Col(
                     [
-                        dcc.Graph(figure=wordcount_hist),
+                        # dcc.Graph(figure=wordcount_hist),
+                        dcc.Graph(figure=top_keywords_fig),
+                        
                         html.Br(),
                         html.Br(),
                     ],
@@ -152,7 +183,8 @@ app.layout = html.Div(
                                 dcc.Dropdown(
                                     id="kw_dropdown",
                                     multi=True,
-                                    options=top_kwds,
+                                    options=[{'label': f"{i}: {keyword}", 'value': keyword}
+                                             for i, keyword in enumerate(top_kwds, start=1)],
                                     value=["Israel-Gaza War (2023- )"],
                                     maxHeight=400,
                                 ),
@@ -184,7 +216,7 @@ def make_kw_chart(kwds):
         x="date",
         y="pub_date",
         color="keywords_flat",
-        title="Articles per day per keyword - <b>nytimes.com</b><br>October, 2023",
+        title=f"Articles per day per keyword - <b>nytimes.com</b><br>{str(data['pub_date'].min())[:10]} - {str(data['pub_date'].max())[:10]}",
         template=template,
         labels={
             "keywords_flat": "Keyword",
@@ -212,4 +244,4 @@ def make_kw_chart(kwds):
     )
 
 
-app.run(jupyter_mode="external")
+app.run()
